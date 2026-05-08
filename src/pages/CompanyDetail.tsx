@@ -77,15 +77,44 @@ export const CompanyDetail: React.FC = () => {
   }
 
   if (error || !financials) {
+    const isRateLimit = error?.toLowerCase().includes("limit") || error?.toLowerCase().includes("reached");
+    
     return (
-      <div className="min-h-[80vh] flex flex-col items-center justify-center gap-6">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-slate-900 mb-2">Oops! Analysis Failed</h2>
-          <p className="text-slate-500">{error || "The Alpha Vantage API limit might have been reached (5 calls/min for free keys)."}</p>
-        </div>
-        <button onClick={() => navigate('/')} className="bg-slate-900 text-white px-6 py-2 rounded-xl font-bold shadow-lg">
-          Try Another Stock
-        </button>
+      <div className="min-h-[80vh] flex flex-col items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white border border-slate-100 p-12 rounded-3xl shadow-xl max-w-md text-center"
+        >
+          <div className="w-20 h-20 bg-rose-50 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <ShieldAlert size={40} />
+          </div>
+          <h2 className="text-2xl font-black text-slate-900 mb-4">
+            {isRateLimit ? "Market Data Overload" : "Financial Data Not Found"}
+          </h2>
+          <p className="text-slate-500 mb-8 leading-relaxed">
+            {isRateLimit 
+              ? "We've reached the free tier limit for market data (5 calls/minute). Please wait about 60 seconds and refresh."
+              : error || "We couldn't retrieve valid financial statements for this ticker from our data provider."}
+          </p>
+          <div className="flex flex-col gap-3">
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all"
+            >
+              Refresh Analysis
+            </button>
+            <button 
+              onClick={() => navigate('/')} 
+              className="w-full bg-slate-100 text-slate-600 py-4 rounded-2xl font-bold hover:bg-slate-200 transition-all"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+          <p className="mt-8 text-[10px] text-slate-300 uppercase tracking-widest font-bold">
+            Data Provider: Alpha Vantage
+          </p>
+        </motion.div>
       </div>
     );
   }
