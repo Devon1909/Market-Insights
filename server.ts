@@ -22,9 +22,13 @@ async function startServer() {
   app.get("/api/status", (req, res) => {
     const alphaKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
+    
+    const alphaValid = !!alphaKey && alphaKey.length > 5 && alphaKey !== "demo";
+    const geminiValid = !!geminiKey && geminiKey.length > 5;
+
     res.json({
-      alphaVantage: !!alphaKey && alphaKey !== "demo" && alphaKey !== "",
-      gemini: !!geminiKey,
+      alphaVantage: alphaValid,
+      gemini: geminiValid,
       env: process.env.NODE_ENV || "development"
     });
   });
