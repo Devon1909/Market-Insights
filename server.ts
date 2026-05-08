@@ -18,11 +18,23 @@ async function startServer() {
 
   app.use(express.json({ limit: '1mb' }));
 
+  // Status endpoint to check if keys are configured
+  app.get("/api/status", (req, res) => {
+    const alphaKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY;
+    const geminiKey = process.env.GEMINI_API_KEY;
+    res.json({
+      alphaVantage: !!alphaKey && alphaKey !== "demo" && alphaKey !== "",
+      gemini: !!geminiKey,
+      env: process.env.NODE_ENV || "development"
+    });
+  });
+
   // Proxy API for Alpha Vantage to keep key safe and bypass CORS
   app.get("/api/stocks/search", async (req, res) => {
     try {
       const { keywords } = req.query;
-      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || "demo";
+      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY || "demo";
+      console.log(`[Search] Query: ${keywords} (Key: ${(!apiKey || apiKey === 'demo') ? 'DEMO' : 'PROV'})`);
       const response = await axios.get(`https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${keywords}&apikey=${apiKey}`);
       res.json(response.data);
     } catch (error) {
@@ -33,7 +45,8 @@ async function startServer() {
   app.get("/api/stocks/financials/:ticker", async (req, res) => {
     try {
       const { ticker } = req.params;
-      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || "demo";
+      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY || "demo";
+      console.log(`[Financials] Fetching: ${ticker} (Key: ${(!apiKey || apiKey === 'demo') ? 'DEMO' : 'PROV'})`);
       
       const [overview, income, balance] = await Promise.all([
         axios.get(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${ticker}&apikey=${apiKey}`),

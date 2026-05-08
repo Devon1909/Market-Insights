@@ -11,6 +11,11 @@ export const Home: React.FC = () => {
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [apiStatus, setApiStatus] = useState({ alphaVantage: false, gemini: false });
+
+  useEffect(() => {
+    axios.get('/api/status').then(res => setApiStatus(res.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
@@ -18,8 +23,11 @@ export const Home: React.FC = () => {
         setIsSearching(true);
         try {
           const response = await axios.get(`/api/stocks/search?keywords=${search}`);
+          console.log("Search results:", response.data);
           if (response.data.bestMatches) {
             setSearchResults(response.data.bestMatches);
+          } else if (response.data.Note || response.data.Information) {
+            console.warn("API Note:", response.data.Note || response.data.Information);
           }
         } catch (error) {
           console.error("Search error:", error);
@@ -29,7 +37,7 @@ export const Home: React.FC = () => {
       } else {
         setSearchResults([]);
       }
-    }, 500);
+    }, 400);
 
     return () => clearTimeout(delayDebounceFn);
   }, [search]);
@@ -45,6 +53,22 @@ export const Home: React.FC = () => {
         >
           Visual Financial Intelligence.
         </motion.h1>
+        
+        <div className="flex justify-center items-center gap-4 mb-8">
+          <div className="flex items-center gap-2 px-3 py-1 bg-white border border-slate-100 rounded-full shadow-sm">
+            <div className={`w-2 h-2 rounded-full ${apiStatus.alphaVantage ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500'}`} />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              {apiStatus.alphaVantage ? 'Alpha Vantage Connected' : 'Demo Mode (Limited)'}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 px-3 py-1 bg-white border border-slate-100 rounded-full shadow-sm">
+            <div className={`w-2 h-2 rounded-full ${apiStatus.gemini ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-rose-500'}`} />
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Gemini AI: {apiStatus.gemini ? 'Active' : 'Offline'}
+            </span>
+          </div>
+        </div>
+
         <p className="text-slate-500 mb-8 text-lg max-w-2xl mx-auto">
           Turn complex financial data into intuitive visual stories. Search for any US-listed stock to begin your analysis.
         </p>
