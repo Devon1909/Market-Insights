@@ -1,0 +1,6 @@
+{
+  "name": "MarketInsights",
+  "description": "Visual financial storytelling for investors. Interactive Snowflake radar charts and revenue Sankey flow diagrams powered by Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
