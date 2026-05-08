@@ -1,20 +1,35 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const ai = new GoogleGenAI(process.env.GEMINI_API_KEY || '');
 
 export interface CompanyNarrative {
   valuation: string;
   riskFactors: string;
   growthPotential: string;
+  snowflake: {
+    value: number;
+    future: number;
+    past: number;
+    health: number;
+    dividend: number;
+  };
 }
 
-export const getCompanyNarrative = async (ticker: string, details: string): Promise<CompanyNarrative> => {
+export const getCompanyAnalysis = async (ticker: string, financialData: any): Promise<CompanyNarrative> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: `Provide a concise 3-point financial narrative for ${ticker}. 
-      Details: ${details}.
-      Focus on Valuation, Risk Factors, and Growth Potential.`,
+      model: "gemini-3-flash-preview",
+      contents: [{
+        role: "user",
+        parts: [{
+          text: `Analyze this stock: ${ticker}. 
+          Based on the following raw financial data (Income Statement, Balance Sheet, Overview), provide:
+          1. A 3-point narrative (Valuation, Risks, Growth).
+          2. Five scores out of 20 for: Value, Future, Past, Health, Dividend.
+          
+          Data: ${JSON.stringify(financialData).substring(0, 30000)}` // Safeguard token limits
+        }]
+      }],
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -23,22 +38,35 @@ export const getCompanyNarrative = async (ticker: string, details: string): Prom
             valuation: { type: Type.STRING },
             riskFactors: { type: Type.STRING },
             growthPotential: { type: Type.STRING },
+            snowflake: {
+              type: Type.OBJECT,
+              properties: {
+                value: { type: Type.NUMBER },
+                future: { type: Type.NUMBER },
+                past: { type: Type.NUMBER },
+                health: { type: Type.NUMBER },
+                dividend: { type: Type.NUMBER },
+              },
+              required: ["value", "future", "past", "health", "dividend"],
+            },
           },
-          required: ["valuation", "riskFactors", "growthPotential"],
+          required: ["valuation", "riskFactors", "growthPotential", "snowflake"],
         },
       },
     });
 
-    if (response.text) {
-      return JSON.parse(response.text.trim());
+    const text = response.text;
+    if (text) {
+      return JSON.parse(text);
     }
   } catch (error) {
-    console.error("Gemini Error:", error);
+    console.error("Gemini Analysis Error:", error);
   }
 
   return {
     valuation: "Analysis currently unavailable.",
-    riskFactors: "Unable to assess risk factors at this time.",
-    growthPotential: "Growth potential data is pending."
+    riskFactors: "Unable to assess risks.",
+    growthPotential: "Growth data pending.",
+    snowflake: { value: 10, future: 10, past: 10, health: 10, dividend: 10 }
   };
 };
