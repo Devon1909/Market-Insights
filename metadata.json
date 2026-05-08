@@ -1,6 +1,6 @@
 {
-  "name": "MarketInsights",
-  "description": "Visual financial storytelling for investors. Interactive Snowflake radar charts and revenue Sankey flow diagrams powered by Gemini AI.",
+  "name": "MarketPulse AI",
+  "description": "Professional-grade stock research platform. Real-time visual financial storytelling with AI-driven Snowflake analysis and Sankey revenue flows.",
   "requestFramePermissions": [],
   "majorCapabilities": []
 }

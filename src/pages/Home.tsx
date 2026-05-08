@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, TrendingUp, BarChart3, PieChart, Activity, Loader2 } from 'lucide-react';
+import { Search, TrendingUp, BarChart3, PieChart, Activity, Loader2, Bookmark } from 'lucide-react';
 import { MOCK_STOCKS } from '../mockData.ts';
 import { StockCard } from '../components/StockCard.tsx';
 import { motion, AnimatePresence } from 'motion/react';
+import { getMarketPulse } from '../services/geminiService.ts';
 import axios from 'axios';
 
 export const Home: React.FC = () => {
@@ -12,9 +13,24 @@ export const Home: React.FC = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [apiStatus, setApiStatus] = useState({ alphaVantage: false, gemini: false });
+  const [marketPulse, setMarketPulse] = useState<string | null>(null);
+  const [watchlist, setWatchlist] = useState<any[]>([]);
 
   useEffect(() => {
     axios.get('/api/status').then(res => setApiStatus(res.data)).catch(() => {});
+    
+    // Fetch Market Pulse on load
+    getMarketPulse().then(setMarketPulse).catch(() => {});
+
+    // Load watchlist from localStorage
+    const saved = localStorage.getItem('marketpulse_watchlist');
+    if (saved) {
+      try {
+        setWatchlist(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse watchlist");
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -72,6 +88,27 @@ export const Home: React.FC = () => {
         <p className="text-slate-500 mb-8 text-lg max-w-2xl mx-auto">
           Turn complex financial data into intuitive visual stories. Search for any US-listed stock to begin your analysis.
         </p>
+
+        {marketPulse && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="max-w-2xl mx-auto mb-12 p-1 bg-gradient-to-r from-emerald-100 to-indigo-100 rounded-3xl"
+          >
+            <div className="bg-white/80 backdrop-blur-sm p-6 rounded-[calc(1.5rem-4px)] border border-white/50 text-left">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center text-white">
+                  <Activity size={16} />
+                </div>
+                <h3 className="font-bold text-slate-900 text-sm tracking-tight">Daily Market Pulse</h3>
+                <span className="ml-auto text-[9px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 px-2 py-0.5 rounded">May 2026</span>
+              </div>
+              <p className="text-slate-600 text-sm leading-relaxed font-medium italic">
+                "{marketPulse}"
+              </p>
+            </div>
+          </motion.div>
+        )}
         
         <div className="relative max-w-xl mx-auto z-50">
           <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
@@ -115,18 +152,50 @@ export const Home: React.FC = () => {
       </div>
 
       {/* Featured Stocks */}
-      <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
-        <TrendingUp className="text-emerald-500" size={20} />
-        Featured Market Insights
-      </h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-        {MOCK_STOCKS.map((stock) => (
-          <StockCard 
-            key={stock.ticker} 
-            stock={stock} 
-            onClick={(ticker) => navigate(`/company/${ticker}`)} 
-          />
-        ))}
+      <div className="flex flex-col md:flex-row gap-12">
+        <div className="flex-1">
+          <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+            <TrendingUp className="text-emerald-500" size={20} />
+            Featured Market Insights
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6 mb-12">
+            {MOCK_STOCKS.map((stock) => (
+              <StockCard 
+                key={stock.ticker} 
+                stock={stock} 
+                onClick={(ticker) => navigate(`/company/${ticker}`)} 
+              />
+            ))}
+          </div>
+        </div>
+
+        {watchlist.length > 0 && (
+          <div className="w-full md:w-80">
+            <h2 className="text-xl font-bold text-slate-900 mb-6 flex items-center gap-2">
+              <Bookmark className="text-indigo-500" size={20} />
+              Your Watchlist
+            </h2>
+            <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm">
+              <div className="space-y-4">
+                {watchlist.map((item) => (
+                  <button
+                    key={item.symbol}
+                    onClick={() => navigate(`/company/${item.symbol}`)}
+                    className="w-full flex items-center justify-between p-3 hover:bg-slate-50 rounded-2xl transition-colors text-left border border-transparent hover:border-slate-100"
+                  >
+                    <div>
+                      <span className="font-bold text-slate-900">{item.symbol}</span>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{item.name}</p>
+                    </div>
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:text-emerald-500 transition-colors">
+                      <BarChart3 size={16} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

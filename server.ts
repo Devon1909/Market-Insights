@@ -12,6 +12,11 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes cache for financial data
+const newsCache = new Map<string, { data: any, timestamp: number }>();
+const finCache = new Map<string, { data: any, timestamp: number }>();
+const searchCache = new Map<string, { data: any, timestamp: number }>();
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -21,6 +26,8 @@ async function startServer() {
   // Status endpoint to check if keys are configured
   app.get("/api/status", (req, res) => {
     const alphaKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY;
+    
+    // Gemini key check (just to inform the UI, even if used on frontend)
     const geminiKey = process.env.GEMINI_API_KEY;
     
     const alphaValid = !!alphaKey && alphaKey.length > 5 && alphaKey !== "demo";
@@ -37,9 +44,20 @@ async function startServer() {
   app.get("/api/stocks/search", async (req, res) => {
     try {
       const { keywords } = req.query;
+      const query = String(keywords).toLowerCase();
+      
+      const cached = searchCache.get(query);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return res.json(cached.data);
+      }
+
       const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY || "demo";
-      console.log(`[Search] Query: ${keywords} (Key: ${(!apiKey || apiKey === 'demo') ? 'DEMO' : 'PROV'})`);
       const response = await axios.get(`https://www.alphavantage.co/query?function=SYMBOL_SEARCH&keywords=${keywords}&apikey=${apiKey}`);
+      
+      if (response.data && !response.data.Note && !response.data.Information) {
+        searchCache.set(query, { data: response.data, timestamp: Date.now() });
+      }
+      
       res.json(response.data);
     } catch (error) {
       res.status(500).json({ error: "Failed to search stocks" });
@@ -49,96 +67,79 @@ async function startServer() {
   app.get("/api/stocks/financials/:ticker", async (req, res) => {
     try {
       const { ticker } = req.params;
-      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY || "demo";
-      console.log(`[Financials] Fetching: ${ticker} (Key: ${(!apiKey || apiKey === 'demo') ? 'DEMO' : 'PROV'})`);
-      
-      const [overview, income, balance] = await Promise.all([
-        axios.get(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${ticker}&apikey=${apiKey}`),
-        axios.get(`https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${ticker}&apikey=${apiKey}`),
-        axios.get(`https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol=${ticker}&apikey=${apiKey}`)
-      ]);
+      const symbol = ticker.toUpperCase();
 
-      // Check for rate limiting messages from Alpha Vantage
+      const cached = finCache.get(symbol);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return res.json(cached.data);
+      }
+
+      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY || "demo";
+      
+      // Sequential fetching instead of Promise.all to avoid burst limits
+      // Alpha Vantage sometimes penalizes multiple concurrent requests on free keys
+      const overview = await axios.get(`https://www.alphavantage.co/query?function=OVERVIEW&symbol=${symbol}&apikey=${apiKey}`);
+      
+      // Delay slightly between calls to be respectful to the free tier API
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const income = await axios.get(`https://www.alphavantage.co/query?function=INCOME_STATEMENT&symbol=${symbol}&apikey=${apiKey}`);
+      
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const balance = await axios.get(`https://www.alphavantage.co/query?function=BALANCE_SHEET&symbol=${symbol}&apikey=${apiKey}`);
+
       const dataItems = [overview.data, income.data, balance.data];
-      const rateLimitMsg = dataItems.find(d => d.Note || d.Information);
+      const rateLimitMsg = dataItems.find(d => d && (d.Note || d.Information));
       
       if (rateLimitMsg) {
+        if (cached) return res.json(cached.data);
         return res.status(429).json({ 
-          error: "Alpha Vantage API limit reached (5 calls/min). Please wait a moment and try again.",
+          error: "API limit reached. Sequential buffering enabled.",
+          isRateLimited: true,
           details: rateLimitMsg.Note || rateLimitMsg.Information
         });
       }
 
       if (!overview.data || Object.keys(overview.data).length === 0) {
-        return res.status(404).json({ error: `No stock found for ticker: ${ticker}` });
+        return res.status(404).json({ error: `Not found: ${symbol}` });
       }
 
-      res.json({
+      const combinedData = {
         overview: overview.data,
         incomeStatement: income.data,
         balanceSheet: balance.data
-      });
+      };
+
+      finCache.set(symbol, { data: combinedData, timestamp: Date.now() });
+      res.json(combinedData);
     } catch (error) {
-      console.error("Alpha Vantage Error:", error);
-      res.status(500).json({ error: "Failed to fetch financials from provider." });
+      res.status(500).json({ error: "Failed to fetch financials." });
     }
   });
 
-  const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
-
-  app.post("/api/analysis", async (req, res) => {
+  // New endpoint for Stock News
+  app.get("/api/stocks/news/:ticker", async (req, res) => {
     try {
-      const { ticker, financialData } = req.body;
-      
-      if (!financialData || !financialData.overview) {
-        return res.status(400).json({ error: "Insufficient financial data for analysis." });
+      const { ticker } = req.params;
+      const symbol = ticker.toUpperCase();
+
+      const cached = newsCache.get(symbol);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        return res.json(cached.data);
       }
 
-      const model = (genAI as any).getGenerativeModel({ model: "gemini-1.5-flash" });
-      const result = await model.generateContent({
-        contents: [{
-          role: "user",
-          parts: [{
-            text: `Analyze this stock: ${ticker}. 
-            Based on the following raw financial data (Income Statement, Balance Sheet, Overview), provide:
-            1. A 3-point narrative (Valuation, Risks, Growth).
-            2. Five scores out of 20 for: Value, Future, Past, Health, Dividend.
-            
-            Data: ${JSON.stringify(financialData).substring(0, 30000)}` 
-          }]
-        }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              valuation: { type: Type.STRING },
-              riskFactors: { type: Type.STRING },
-              growthPotential: { type: Type.STRING },
-              snowflake: {
-                type: Type.OBJECT,
-                properties: {
-                  value: { type: Type.NUMBER },
-                  future: { type: Type.NUMBER },
-                  past: { type: Type.NUMBER },
-                  health: { type: Type.NUMBER },
-                  dividend: { type: Type.NUMBER },
-                },
-                required: ["value", "future", "past", "health", "dividend"],
-              },
-            },
-            required: ["valuation", "riskFactors", "growthPotential", "snowflake"],
-          },
-        },
-      });
+      const apiKey = process.env.VITE_ALPHA_VANTAGE_API_KEY || process.env.ALPHA_VANTAGE_API_KEY || "demo";
+      const response = await axios.get(`https://www.alphavantage.co/query?function=NEWS_SENTIMENT&tickers=${symbol}&apikey=${apiKey}`);
+      
+      const rateLimitMsg = response.data && (response.data.Note || response.data.Information);
+      if (rateLimitMsg) {
+        if (cached) return res.json(cached.data);
+        return res.status(429).json({ error: "News API limit reached." });
+      }
 
-      const response = await result.response;
-      const responseText = response.text();
-      console.log(`[AI Analysis] Successful for ${ticker}`);
-      res.json(JSON.parse(responseText));
-    } catch (error: any) {
-      console.error("[Gemini Analysis Error]:", error);
-      res.status(500).json({ error: "AI analysis engine failed.", details: error.message });
+      newsCache.set(symbol, { data: response.data, timestamp: Date.now() });
+      res.json(response.data);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch news" });
     }
   });
 
